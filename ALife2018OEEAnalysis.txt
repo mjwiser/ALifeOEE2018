@@ -1,0 +1,536 @@
+# Set my working directory to put things in the right place
+
+setwd("/Users/mmgdepartment/Dropbox/Long_Term_Avida/high_res/")
+
+# Now we're going to look at the runs evolved for 200k generations in 
+# logic-77 from the basic ancestor.  These are the runs that produced the
+# ancestors used for the reintroductions from logic-77.  Everything here
+# is with the additive fitness version, instead of the power distribution.
+
+
+
+dirs <- list.dirs(path = "./l77", recursive=FALSE)
+
+
+
+#Make sure that files from same replicate get merged appropriately
+
+# Take just the max update for each file; looking at just endpoints
+results.data <- NULL #This section adapted from stackoverflow.com answer
+
+
+
+for (d in dirs) {
+	for (d2 in list.dirs(path = d, recursive = FALSE)){
+    
+		average_file_path <- paste(d2, "average.dat", sep = "/")
+
+
+		{
+    
+
+			fitness <- read.csv(average_file_path, header = F, sep = " ", na.strings = "", colClasses = "character", skip = 19)
+			wanted <- cbind(fitness[,1], fitness[,4], fitness[,13])
+
+			wanted[,1]<-as.numeric(as.character(wanted[,1]))
+			wanted[,2]<-as.numeric(as.character(wanted[,2]))
+			wanted[,3]<-as.numeric(as.character(wanted[,3]))
+
+			grr<-as.numeric(as.character(wanted[,3]))
+			grr<-floor(grr/20)
+			grr<-grr*20
+			#max.update.fitness<-max(fitness[,1])
+			#fitness<-subset(fitness, fitness[,1]==max.update.fitness)
+
+
+			output.matrix<-matrix(ncol=5, nrow=length(wanted[,1]))
+
+			output.matrix[,1]<-as.numeric(as.character(wanted[,1]))
+			output.matrix[,2]<-as.numeric(as.character(wanted[,2]))
+			#output.matrix[,3]<-as.numeric(as.character(wanted[,3]))
+			output.matrix[,3]<-as.numeric(as.character(grr))
+			
+		
+			foo <- tail(unlist(strsplit(d, split = "_", fixed = T)), n=2)[1]
+			output.matrix[,4] <- foo
+
+
+			output.matrix[,5] <- tail(unlist(strsplit(d, split="_", fixed=T)), n = 2)[2]
+			
+
+			results.data <- rbind(results.data, output.matrix)
+			}
+		}
+	}
+
+
+
+backup.results.data<-results.data
+
+
+
+results.data<-backup.results.data
+
+results.data<-as.data.frame(results.data)
+
+colnames(results.data)<-c("Update", "Fitness", "Generation", "Condition", "Seed")
+
+results.data$Update<-as.numeric(as.character(results.data$Update))
+results.data$Fitness<-as.numeric(as.character(results.data$Fitness))
+results.data$Generation<-as.numeric(as.character(results.data$Generation))
+results.data$Seed <- as.numeric(as.character(results.data$Seed))
+
+# Remove Update -1 and 0 (generation 0)
+
+results.data<-subset(results.data, Generation>0.5)
+
+# Sort the data, to ensure the generations are monotonicly increasing:
+
+results.data <- results.data[order(results.data$Generation),]
+
+# Write this file as output:
+
+write.csv(results.data, file="L77.Phase.1.csv")
+
+# Set color pallette
+
+library(RColorBrewer)
+my.pallette <- brewer.pal(n=10, name="Spectral")
+
+
+results.data$Log.Fitness <- log(results.data$Fitness, base=2)
+
+# Sort the data, to ensure the generations are monotonicly increasing:
+
+results.data <- results.data[order(results.data$Generation),]
+
+# Scale each point relative to lowest observed fitness:
+
+ancestral.fitness<-.246114
+
+results.data$Scaled.Fitness<-results.data$Fitness/ancestral.fitness
+
+# Calculate log scaled fitness:
+
+results.data$Log.Scaled.Fitness<-log(results.data$Scaled.Fitness, 2)
+
+
+# Write this file as output:
+
+write.csv(results.data, file="L77.Phase.1.detailed.csv")
+
+
+# Establish the list of seeds:
+
+Seed.list <- unique(results.data$Seed)
+
+# Plot Scaled Fitness as a function of Generation for this phase:
+
+plot(x=results.data$Generation, y=results.data$Scaled.Fitness, xlab="Time (generations) ", ylab="Scaled Fitness", col="white")
+
+Seed.list<-unique(results.data$Seed)
+for (i in 1:length(Seed.list)) {
+	plotting.data <- subset(results.data, Seed==Seed.list[i])
+	lines(x=plotting.data$Generation, y=plotting.data$Scaled.Fitness, col=my.pallette[i], lwd=1)
+	}
+
+
+# Plot Fitness as a function of Generation for this phase:
+
+
+graphics.off()
+png(filename="Detailed.Standard.L77.Phase.1.png", height=600, width=1200, units="px", res=200)
+
+plot(x=results.data$Generation, y=results.data$Log.Scaled.Fitness, xlab="Time (generations) ", ylab="Log 2 Scaled Fitness", col="white")
+
+#Seed.list<-unique(results.data$Seed)
+Seed.list <- c(1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010)
+for (i in 1:length(Seed.list)) {
+	plotting.data <- subset(results.data, Seed==Seed.list[i])
+	lines(x=plotting.data$Generation, y=plotting.data$Log.Scaled.Fitness, col=my.pallette[i], lwd=1)
+	}
+
+
+dev.off()
+
+######
+
+# Now let's fit some curves:
+
+model.results.matrix <- matrix(nrow=length(Seed.list), ncol=7)
+
+for (i in 1:length(Seed.list)) {
+	current.data <- subset(results.data, Seed==Seed.list[i])
+
+	power.full<-nls(Log.Scaled.Fitness  ~ (b*Generation + 1)^a, data=current.data, start=list(a=0.5, b=.01), algorithm="port", trace=T, na.action=na.omit, model=T, control=nls.control(maxiter=1000, warnOnly=T))
+	values.power.full<-coef(power.full)
+	model.power.full.a<-values.power.full[1]
+	model.power.full.b<-values.power.full[2]
+
+	hyper.full<-nls(Log.Scaled.Fitness + 1 ~ a*Generation/(b + Generation) + 1, data=current.data, start=list(a=60, b=10000), algorithm="port", trace=T, na.action=na.omit, model=T, control=nls.control(maxiter=1000, warnOnly=T))
+	values.hyper.full<-coef(hyper.full)
+	model.hyper.full.a<-values.hyper.full[1]
+	model.hyper.full.b<-values.hyper.full[2]
+
+	model.results.matrix[i, 1] <- Seed.list[i]
+	model.results.matrix[i, 2] <- BIC(power.full)
+	model.results.matrix[i, 3] <- BIC(hyper.full)
+	model.results.matrix[i, 4] <- model.power.full.a
+	model.results.matrix[i, 5] <- model.power.full.b
+	model.results.matrix[i, 6] <- model.hyper.full.a
+	model.results.matrix[i, 7] <- model.hyper.full.b
+
+	}
+
+colnames(model.results.matrix) <- c("Seed", "BIC.Power", "BIC.Hyper", "Power.a", "Power.b", "Hyper.a", "Hyper.b")
+
+model.results.frame <- as.data.frame(model.results.matrix)
+
+model.results.frame$Diff <- model.results.frame$BIC.Power - model.results.frame$BIC.Hyper
+
+write.csv(model.results.frame, file="Model.results.frame.csv")
+
+# Store the results of the phase 1 analysis:
+
+Phase.1.results.data <- results.data
+
+
+
+#############
+
+# Now we have to look at phase 2.  What do the new graphs look like?  And which of 
+# them exceeded expectations?
+
+
+setwd("/Users/mmgdepartment/Dropbox/Long_Term_Avida/l77/")
+
+# Now we're going to look at the runs evolved for 200k generations in 
+# logic-77 from ancestors which had themselves been evolved for 200k
+# generations in logic-77:
+
+
+
+dirs <- list.dirs(path = "./long", recursive=FALSE)
+
+
+
+#Make sure that files from same replicate get merged appropriately
+
+# Take just the max update for each file; looking at just endpoints
+results.data <- NULL #This section adapted from stackoverflow.com answer
+
+
+
+for (d in dirs) {
+	for (d2 in list.dirs(path = d, recursive = FALSE)){
+    
+		average_file_path <- paste(d2, "average.dat", sep = "/")
+
+
+		{
+    
+
+			fitness <- read.csv(average_file_path, header = F, sep = " ", na.strings = "", colClasses = "character", skip = 19)
+			wanted <- cbind(fitness[,1], fitness[,4], fitness[,13])
+
+			wanted[,1]<-as.numeric(as.character(wanted[,1]))
+			wanted[,2]<-as.numeric(as.character(wanted[,2]))
+			wanted[,3]<-as.numeric(as.character(wanted[,3]))
+
+			grr<-as.numeric(as.character(wanted[,3]))
+			grr<-floor(grr/20)
+			grr<-grr*20
+			#max.update.fitness<-max(fitness[,1])
+			#fitness<-subset(fitness, fitness[,1]==max.update.fitness)
+
+
+			output.matrix<-matrix(ncol=6, nrow=length(wanted[,1]))
+
+			output.matrix[,1]<-as.numeric(as.character(wanted[,1]))
+			output.matrix[,2]<-as.numeric(as.character(wanted[,2]))
+			#output.matrix[,3]<-as.numeric(as.character(wanted[,3]))
+			output.matrix[,3]<-as.numeric(as.character(grr))
+			
+		
+			foo <- tail(unlist(strsplit(d, split = "/", fixed = T)), n=1)
+			output.matrix[,4] <- foo
+
+
+			output.matrix[,5] <- tail(unlist(strsplit(d, split="_", fixed=T)), n = 2)[1]
+			output.matrix[,6] <- tail(unlist(strsplit(d, split="_", fixed=T)), n = 2)[2]
+			
+
+			results.data <- rbind(results.data, output.matrix)
+			}
+		}
+	}
+
+
+
+backup.results.data<-results.data
+
+
+results.data<-backup.results.data
+
+results.data<-as.data.frame(results.data)
+
+colnames(results.data)<-c("Update", "Fitness", "Generation", "Condition", "Ancestor", "Seed")
+
+results.data$Update<-as.numeric(as.character(results.data$Update))
+results.data$Fitness<-as.numeric(as.character(results.data$Fitness))
+results.data$Generation<-as.numeric(as.character(results.data$Generation))
+
+# Remove Update -1 and 0 (generation 0)
+
+results.data<-subset(results.data, Generation>0.5)
+
+# Store unmodified:
+
+Phase.2.raw.results.data <- results.data
+
+write.csv(results.data, file="L77.Phase.2.results.csv")
+
+Ancestor.list <- unique(results.data$Ancestor)
+
+current.Ancestor <- Ancestor.list[1]
+current.data <- subset(results.data, Ancestor==current.Ancestor)
+earliest.data <- subset(current.data, Generation==20)
+min.fitness <- min(earliest.data$Fitness)
+current.data$Scaled.Fitness <- current.data$Fitness/min.fitness
+rescaled.data <- current.data
+
+
+for (i in 2:length(Ancestor.list)) {
+	current.Ancestor <- Ancestor.list[i]
+	current.data <- subset(results.data, Ancestor==current.Ancestor)
+	earliest.data <- subset(current.data, Generation==20)
+	min.fitness <- min(earliest.data$Fitness)
+	current.data$Scaled.Fitness <- current.data$Fitness/min.fitness
+	rescaled.data <- rbind(rescaled.data, current.data)
+	}
+
+
+# Establish color pallette:
+
+library(RColorBrewer)
+my.pallette <- brewer.pal(n=10, name="Spectral")
+
+
+# Log transform Fitness
+
+rescaled.data$Log.Scaled.Fitness <- log(rescaled.data$Scaled.Fitness, base=2)
+
+# Rescale to same scale as previous data:
+
+rescaled.data$Ancestral.Scaled.Fitness <- rescaled.data$Fitness/ancestral.fitness
+
+rescaled.data$Log.Ancestral.Scaled.Fitness <- log(rescaled.data$Ancestral.Scaled.Fitness, base=2)
+
+# Save these results:
+
+Phase.2.results.data <- rescaled.data
+
+plot(x=rescaled.data$Generation, y=rescaled.data$Log.Scaled.Fitness, xlab="Time (generations) ", ylab="Log 2 Scaled Fitness", col="white")
+
+#Ancestor.list<-unique(rescaled.data$Ancestor)
+Ancestor.list <- c(1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010)
+for (i in 1:length(Ancestor.list)) {
+	plotting.data <- subset(rescaled.data, Ancestor==Ancestor.list[i])
+	Seed.list <- unique(plotting.data$Seed)
+	for (j in 1:length(Seed.list)) {
+		internal.data <- subset(plotting.data, Seed==Seed.list[j])
+		internal.data <- internal.data[order(internal.data$Generation),]	
+		lines(x=internal.data$Generation, y=internal.data$Log.Scaled.Fitness, col=my.pallette[i], lwd=1)
+		}
+	}
+
+# Repeat this but in a png format:
+
+graphics.off()
+png(filename="L77_Phase_2.png", height=1200, width=1200, units="px", res=200)
+
+plot(x=rescaled.data$Generation, y=rescaled.data$Log.Scaled.Fitness, xlab="Time (generations) ", ylab="Log 2 Scaled Fitness", col="white")
+
+#Ancestor.list<-unique(rescaled.data$Ancestor)
+Ancestor.list <- c(1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010)
+for (i in 1:length(Ancestor.list)) {
+	plotting.data <- subset(rescaled.data, Ancestor==Ancestor.list[i])
+	Seed.list <- unique(plotting.data$Seed)
+	for (j in 1:length(Seed.list)) {
+		internal.data <- subset(plotting.data, Seed==Seed.list[j])
+		internal.data <- internal.data[order(internal.data$Generation),]	
+		lines(x=internal.data$Generation, y=internal.data$Log.Scaled.Fitness, col=my.pallette[i], lwd=1)
+		}
+	}
+
+dev.off()
+
+
+# Now, the important questions:  
+# How many of these exceed their predicted values at the end of phase 2?
+# How many of them exceed their predicted asymptotes?
+
+final.points <- subset(rescaled.data, Generation==200000)
+
+model.results.frame$Power.End <- ((model.results.frame$Power.b*400000) + 1) ^model.results.frame$Power.a  
+model.results.frame$Hyper.End <- (model.results.frame$Hyper.a*400000) / (model.results.frame$Hyper.b + 400000)
+
+Ancestor.list <- c(1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010)
+Seed.list <- c(101, 102, 103, 104, 105, 106, 107, 108, 109, 110)
+
+Exceed.matrix <- matrix(nrow=10, ncol=4)
+
+for (i in 1:length(Ancestor.list)) {
+	current.data <- subset(final.points, Ancestor==Ancestor.list[i])
+	comparison.data <- subset(model.results.frame, Seed==Ancestor.list[i])
+	Exceed.Hyper <- 0
+	Exceed.Power <- 0
+	Exceed.Asymptote <- 0
+	for (j in 1:length(Seed.list)) {
+		inner.data <- subset(current.data, Seed==Seed.list[j])
+		if (inner.data$Log.Ancestral.Scaled.Fitness > comparison.data$Hyper.End) 
+			{Exceed.Hyper <- Exceed.Hyper + 1}
+		if (inner.data$Log.Ancestral.Scaled.Fitness > comparison.data$Power.End) 
+			{Exceed.Power <- Exceed.Power + 1}
+		if (inner.data$Log.Ancestral.Scaled.Fitness > comparison.data$Hyper.a) 
+			{Exceed.Asymptote <- Exceed.Asymptote + 1}
+		}
+	Exceed.matrix[i, 1] <- Ancestor.list[i]
+	Exceed.matrix[i, 2] <- Exceed.Hyper
+	Exceed.matrix[i, 3] <- Exceed.Power
+	Exceed.matrix[i, 4] <- Exceed.Asymptote
+	}
+			
+colnames(Exceed.matrix) <- c("Ancestor.Seed", "Number.Exceed.Hyper", "Number.Exceed.Power", "Number.Exceed.Asymptote")
+
+Exceed.frame <- as.data.frame(Exceed.matrix)
+
+# Both models tend to overpredict fit at 400k.  
+# 17 of the 100 instances exceed the Hyperbolic asymptote; these come from 5 of the initial seeds.
+
+# Now let's look at a few specific ancestors.  The one where the hyperbola does the worst
+# is 1009.  The one where the power law does the worst is 1005.  
+
+
+Seed.grapher <- function(chosen.seed) {
+
+	phase.1.data <- subset(Phase.1.results.data, Seed==chosen.seed)
+	phase.2.data <- subset(Phase.2.results.data, Ancestor==chosen.seed)
+	#phase.2.data <- subset(l77.results.data, Ancestor==chosen.seed)
+	model.data <- subset(model.results.frame, Seed==chosen.seed)
+
+	phase.1.x <- seq(from=0, to=200000, by=100)
+	phase.2.x <- seq(from=200000, to=400000, by=100)
+
+	phase.1.hyper <- (phase.1.x*model.data$Hyper.a)/(phase.1.x + model.data$Hyper.b)
+	phase.2.hyper <- (phase.2.x*model.data$Hyper.a)/((phase.2.x) + model.data$Hyper.b)
+
+	phase.1.power <- (model.data$Power.b*phase.1.x + 1)^model.data$Power.a
+	phase.2.power <- (model.data$Power.b*phase.2.x + 1)^model.data$Power.a
+
+	observed.max <- max(phase.2.data$Log.Ancestral.Scaled.Fitness)
+	hyper.max <- max(phase.2.hyper)
+	power.max <- max(phase.2.power)
+
+	ymax <- max(observed.max, hyper.max, power.max)
+
+
+	graphics.off()
+	png(filename=paste(chosen.seed,".png"), height=1200, width=1200, units="px", res=200)
+	plot(x=phase.2.data$Generation, y=phase.2.data$Log.Ancestral.Scaled.Fitness, xlim=c(0, 400000), ylim=c(0, ymax+2), xlab="Time (generations) ", ylab="Log 2 Scaled Fitness", col="white", xaxt='n')
+
+	axis(side=1, at=c(0, 100000, 200000, 300000, 400000), labels=c("0", "100,000", "200,000", "300,000", "400,000"))
+
+	for (i in 1:length(Seed.list)) {
+		current.data <- subset(phase.2.data, Seed==Seed.list[i])
+		lines(x=current.data$Generation+200000, y=current.data$Log.Ancestral.Scaled.Fitness, lwd=1, col="gray50")
+	}
+
+	lines(x=phase.1.data$Generation, y=phase.1.data$Log.Scaled.Fitness, col="black", lwd=2)
+
+	lines(y=phase.1.hyper, x=phase.1.x, lwd=2, col="darkred")
+	lines(y=phase.1.power, x=phase.1.x, lwd=2, col="mediumblue")
+
+	lines(y=phase.2.hyper, x=phase.2.x, lwd=2, col="darkred", lty=2)
+	lines(y=phase.2.power, x=phase.2.x, lwd=2, col="mediumblue", lty=2)
+
+	abline(v=200000, col="black", lwd=2, lty=2)
+
+	dev.off()
+	return(0)
+
+	}
+
+
+for (i in 1001:1010) {
+	Seed.grapher(i)
+	}
+
+
+
+Seed.grapher.combination <- function(chosen.seed) {
+
+	phase.1.data <- subset(Phase.1.results.data, Seed==chosen.seed)
+	phase.2.data <- subset(Phase.2.results.data, Ancestor==chosen.seed)
+	#phase.2.data <- subset(l77.results.data, Ancestor==chosen.seed)
+	model.data <- subset(model.results.frame, Seed==chosen.seed)
+
+	phase.1.x <- seq(from=0, to=200000, by=100)
+	phase.2.x <- seq(from=200000, to=400000, by=100)
+
+	phase.1.hyper <- (phase.1.x*model.data$Hyper.a)/(phase.1.x + model.data$Hyper.b)
+	phase.2.hyper <- (phase.2.x*model.data$Hyper.a)/((phase.2.x) + model.data$Hyper.b)
+
+	phase.1.power <- (model.data$Power.b*phase.1.x + 1)^model.data$Power.a
+	phase.2.power <- (model.data$Power.b*phase.2.x + 1)^model.data$Power.a
+
+	observed.max <- max(phase.2.data$Log.Ancestral.Scaled.Fitness)
+	hyper.max <- max(phase.2.hyper)
+	power.max <- max(phase.2.power)
+
+	ymax <- max(observed.max, hyper.max, power.max)
+
+
+	#graphics.off()
+	#png(filename=paste(chosen.seed,".png"), height=1200, width=1200, units="px", res=200)
+	plot(x=phase.2.data$Generation, y=phase.2.data$Log.Ancestral.Scaled.Fitness, xlim=c(0, 400000), ylim=c(0, ymax+2), xlab="Time (generations) ", ylab="Log 2 Scaled Fitness", col="white", xaxt='n')
+
+	axis(side=1, at=c(0, 100000, 200000, 300000, 400000), labels=c("0", "100,000", "200,000", "300,000", "400,000"))
+
+	for (i in 1:length(Seed.list)) {
+		current.data <- subset(phase.2.data, Seed==Seed.list[i])
+		lines(x=current.data$Generation+200000, y=current.data$Log.Ancestral.Scaled.Fitness, lwd=1, col="gray50")
+	}
+
+	lines(x=phase.1.data$Generation, y=phase.1.data$Log.Scaled.Fitness, col="black", lwd=2)
+
+	lines(y=phase.1.hyper, x=phase.1.x, lwd=2, col="darkred")
+	lines(y=phase.1.power, x=phase.1.x, lwd=2, col="mediumblue")
+
+	lines(y=phase.2.hyper, x=phase.2.x, lwd=2, col="darkred", lty=3)
+	lines(y=phase.2.power, x=phase.2.x, lwd=2, col="mediumblue", lty=3)
+
+	abline(v=200000, col="black", lwd=2, lty=2)
+
+	return(0)
+
+	}
+
+
+
+
+# Combined plot showing 4 of the cases: 1010, 1006, 1008, 1009)
+
+graphics.off()
+png(filename="Combined.png", height=1200, width=1200, units="px", res=200)
+par(mfrow=c(2,2), cex.axis=0.7)
+Seed.grapher.combination(1010)
+mtext("A", side=3, adj=0, font=2)
+Seed.grapher.combination(1006)
+mtext("B", side=3, adj=0, font=2)
+Seed.grapher.combination(1008)
+mtext("C", side=3, adj=0, font=2)
+Seed.grapher.combination(1009)
+mtext("D", side=3, adj=0, font=2)
+dev.off()
+
